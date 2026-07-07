@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>Pražiareň — objednávky</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap');
+
+:root{
+  --bg: #FAFAF8;
+  --panel: #FFFFFF;
+  --panel-alt: #F1EFEA;
+  --border: #E5E2DC;
+  --text: #2B2825;
+  --text-soft: #8A8478;
+  --accent: #A9682E;
+  --accent-soft: #F3E7D8;
+  --shadow: 0 1px 2px rgba(43,40,37,0.04), 0 4px 16px rgba(43,40,37,0.06);
+  --shadow-hover: 0 2px 4px rgba(43,40,37,0.06), 0 8px 24px rgba(43,40,37,0.10);
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:'Inter',sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:620px; margin:0 auto; padding:0 20px 60px;}
+
+/* Header banner */
+.banner{
+  background:var(--panel); border-bottom:1px solid var(--border);
+  padding:22px 20px; text-align:center; margin-bottom:32px;
+}
+.banner .label{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-soft);}
+.banner .date{
+  font-family:'Fraunces',serif; font-size:28px; font-weight:600; margin-top:4px;
+}
+
+h1.title{
+  font-family:'Fraunces',serif; font-weight:600; font-size:22px; margin:0 0 4px;
+}
+.subtitle{color:var(--text-soft); font-size:14px; margin:0 0 24px;}
+
+/* Coffee list */
+.coffee-item{
+  background:var(--panel); border:1px solid var(--border); border-radius:14px;
+  padding:16px 18px; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between;
+  box-shadow:var(--shadow); transition:box-shadow .25s ease, transform .25s ease;
+}
+.coffee-item:hover{ box-shadow:var(--shadow-hover); transform:translateY(-1px); }
+.coffee-info .name{ font-family:'Fraunces',serif; font-size:17px; font-weight:600; }
+.coffee-info .origin{ font-size:13px; color:var(--text-soft); margin-top:2px; }
+
+.stepper{ display:flex; align-items:center; gap:12px; }
+.stepper button{
+  width:32px; height:32px; border-radius:50%; border:1px solid var(--border);
+  background:var(--panel-alt); font-size:16px; cursor:pointer; color:var(--text);
+  transition:background .2s ease, transform .15s ease;
+}
+.stepper button:hover{ background:var(--accent-soft); }
+.stepper button:active{ transform:scale(0.92); }
+.stepper .count{ min-width:20px; text-align:center; font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* Name + submit */
+.section{ margin-top:28px; }
+.name-input{
+  width:100%; padding:12px 14px; border:1px solid var(--border); border-radius:10px;
+  font-family:'Inter',sans-serif; font-size:15px; background:var(--panel);
+  transition:border-color .2s ease, box-shadow .2s ease;
+}
+.name-input:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+
+.total-row{
+  display:flex; justify-content:space-between; align-items:center;
+  margin:18px 0; font-size:14px; color:var(--text-soft);
+}
+.total-row strong{ color:var(--text); font-size:15px; }
+
+.submit-btn{
+  width:100%; padding:14px; border:none; border-radius:10px;
+  background:var(--accent); color:#fff; font-size:15px; font-weight:600;
+  cursor:pointer; transition:background .2s ease, transform .15s ease, box-shadow .2s ease;
+  box-shadow:var(--shadow);
+}
+.submit-btn:hover{ background:#8f5726; box-shadow:var(--shadow-hover); }
+.submit-btn:disabled{ background:#CFC9BE; cursor:not-allowed; box-shadow:none; }
+
+/* Capacity gauge (signature element) */
+.gauge-block{
+  margin-top:40px; padding-top:24px; border-top:1px solid var(--border);
+}
+.gauge-label{
+  display:flex; justify-content:space-between; font-size:13px; color:var(--text-soft); margin-bottom:8px;
+}
+.gauge-track{
+  height:10px; background:var(--panel-alt); border-radius:99px; overflow:hidden; border:1px solid var(--border);
+}
+.gauge-fill{
+  height:100%; background:linear-gradient(90deg,#C98A45,var(--accent));
+  border-radius:99px; transition:width .5s ease;
+}
+
+/* Order log (anonymous) */
+.log-title{ font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-soft); margin:24px 0 10px; }
+.log-item{
+  display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);
+  font-size:14px; color:var(--text-soft);
+}
+.log-item:last-child{ border-bottom:none; }
+
+.toast{
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:var(--text); color:#fff; padding:12px 20px; border-radius:10px; font-size:14px;
+  opacity:0; transition:opacity .3s ease, transform .3s ease; pointer-events:none;
+}
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* Gate / login screens */
+.gate{
+  min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
+}
+.gate-card{
+  background:var(--panel); border:1px solid var(--border); border-radius:16px;
+  padding:36px 32px; width:100%; max-width:340px; box-shadow:var(--shadow); text-align:center;
+}
+.gate-card .mark{ font-family:'Fraunces',serif; font-size:24px; font-weight:600; margin-bottom:4px; }
+.gate-card .hint{ font-size:13px; color:var(--text-soft); margin-bottom:22px; }
+.gate-card input{
+  width:100%; padding:12px 14px; border:1px solid var(--border); border-radius:10px;
+  font-size:15px; margin-bottom:12px; transition:border-color .2s ease, box-shadow .2s ease;
+}
+.gate-card input:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.gate-error{ font-size:13px; color:#B3432E; min-height:18px; margin-bottom:6px; }
+.admin-link{
+  position:fixed; bottom:14px; right:16px; font-size:12px; color:var(--text-soft);
+  text-decoration:none; opacity:.6; transition:opacity .2s ease;
+}
+.admin-link:hover{ opacity:1; }
+
+/* Admin panel */
+.admin-wrap{ max-width:640px; margin:0 auto; padding:32px 20px 60px; }
+.admin-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
+.admin-header h1{ font-family:'Fraunces',serif; font-size:22px; margin:0; }
+.back-link{ font-size:13px; color:var(--text-soft); text-decoration:none; }
+.back-link:hover{ color:var(--text); }
+
+.panel{
+  background:var(--panel); border:1px solid var(--border); border-radius:14px;
+  padding:20px 22px; margin-bottom:18px; box-shadow:var(--shadow);
+}
+.panel h2{ font-size:14px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-soft); margin:0 0 14px; }
+.field-row{ display:flex; gap:12px; margin-bottom:10px; }
+.field-row input{
+  flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px;
+}
+.save-btn{
+  padding:10px 18px; border:none; border-radius:8px; background:var(--text); color:#fff;
+  font-size:14px; font-weight:600; cursor:pointer; transition:background .2s ease;
+}
+.save-btn:hover{ background:#464038; }
+
+.admin-order-row{
+  display:flex; justify-content:space-between; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--border);
+  font-size:14px;
+}
+.admin-order-row:last-child{ border-bottom:none; }
+.admin-order-row .who{ font-weight:600; }
+.admin-order-row .what{ color:var(--text-soft); font-size:13px; }
+
+.danger-btn{
+  padding:10px 18px; border:1px solid #E0B8AE; border-radius:8px; background:#FBEFEC; color:#B3432E;
+  font-size:14px; font-weight:600; cursor:pointer; transition:background .2s ease;
+}
+.danger-btn:hover{ background:#F7DFD8; }
+
+.hidden{ display:none !important; }
+</style>
+</head>
+<body>
+
+<!-- USER LOGIN GATE -->
+<div class="gate" id="userGate">
+  <div class="gate-card">
+    <div class="mark">Pražiareň</div>
+    <div class="hint">Zadej heslo pro vstup</div>
+    <div class="gate-error" id="userGateError"></div>
+    <input type="password" id="userPasswordInput" placeholder="Heslo" />
+    <button class="save-btn" style="width:100%" onclick="checkUserPassword()">Vstoupit</button>
+  </div>
+</div>
+<a href="#" class="admin-link" id="showAdminLogin">Admin</a>
+
+<!-- ADMIN LOGIN GATE -->
+<div class="gate hidden" id="adminGate">
+  <div class="gate-card">
+    <div class="mark">Admin</div>
+    <div class="hint">Přístup pro správu pražení</div>
+    <div class="gate-error" id="adminGateError"></div>
+    <input type="password" id="adminPasswordInput" placeholder="Admin heslo" />
+    <button class="save-btn" style="width:100%" onclick="checkAdminPassword()">Přihlásit</button>
+  </div>
+</div>
+
+<!-- MAIN USER PAGE -->
+<div id="userPage" class="hidden">
+  <div class="banner">
+    <div class="label">Nejbližší pražení</div>
+    <div class="date" id="roastDate">Sobota 12. července</div>
+  </div>
+
+  <div class="wrap">
+    <h1 class="title">Objednej si čerstvě praženou kávu</h1>
+    <p class="subtitle">Vyber si balíčky, doplň jméno a potvrď.</p>
+
+    <div id="coffeeList"></div>
+
+    <div class="section">
+      <input class="name-input" id="nameInput" placeholder="Tvoje jméno" />
+    </div>
+
+    <div class="total-row">
+      <span>Celkem balíčků</span>
+      <strong id="totalCount">0</strong>
+    </div>
+
+    <button class="submit-btn" id="submitBtn">Potvrdit objednávku</button>
+
+    <div class="gauge-block">
+      <div class="gauge-label">
+        <span>Obsazená kapacita</span>
+        <span id="gaugeText">0 / 40</span>
+      </div>
+      <div class="gauge-track"><div class="gauge-fill" id="gaugeFill" style="width:0%"></div></div>
+    </div>
+
+    <div class="log-title">Dosavadní objednávky</div>
+    <div id="orderLog"></div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="adminPage" class="hidden">
+  <div class="admin-wrap">
+    <div class="admin-header">
+      <h1>Správa pražení</h1>
+      <a href="#" class="back-link" id="adminLogout">← Odhlásit se</a>
+    </div>
+
+    <div class="panel">
+      <h2>Nejbližší pražení</h2>
+      <div class="field-row">
+        <input id="adminDateInput" placeholder="např. Sobota 12. července" />
+        <button class="save-btn" onclick="saveRoastDate()">Uložit</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Maximální kapacita</h2>
+      <div class="field-row">
+        <input id="adminCapacityInput" type="number" placeholder="40" />
+        <button class="save-btn" onclick="saveCapacity()">Uložit</button>
+      </div>
+      <div style="font-size:13px;color:var(--text-soft)">Aktuálně obsazeno: <strong id="adminUsedText">0</strong> / <span id="adminMaxText">40</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Objednávky (se jmény)</h2>
+      <div id="adminOrderList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Nové kolo pražení</h2>
+      <p style="font-size:13px;color:var(--text-soft);margin-top:0">Smaže všechny aktuální objednávky a připraví systém na další pražení.</p>
+      <button class="danger-btn" onclick="resetOrders()">Resetovat objednávky</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Objednávka odeslána</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, doc, setDoc, getDoc,
+  onSnapshot, deleteDoc, query, orderBy, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDY8GPdTLoOQDHdUsTlh4EeCmGQm44b4Bs",
+  authDomain: "yeabut-roast.firebaseapp.com",
+  projectId: "yeabut-roast",
+  storageBucket: "yeabut-roast.firebasestorage.app",
+  messagingSenderId: "356813408039",
+  appId: "1:356813408039:web:1104494b0da2b9b5340b02"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Hesla jsou zatím natvrdo v kódu — jednoduchá "gate" ochrana, ne skutečný login.
+const USER_PASSWORD = 'kava2026';
+const ADMIN_PASSWORD = 'admin2026';
+
+const coffees = [
+  { id:'etiopie', name:'Etiopie Yirgacheffe', origin:'Ovoce, jasmín, citrus' },
+  { id:'kolumbie', name:'Kolumbie Huila', origin:'Karamel, oříšky, čokoláda' },
+  { id:'brazilie', name:'Brazílie Cerrado', origin:'Ořech, jemná sladkost' },
+];
+let selection = {};
+coffees.forEach(c => selection[c.id] = 0);
+
+let MAX_CAPACITY = 40;
+let roastDateText = 'Sobota 12. července';
+let existingOrders = []; // plní se realtime z Firestore
+
+function orderQty(order){
+  return Object.values(order.items).reduce((a,b)=>a+b,0);
+}
+function coffeeName(id){
+  const c = coffees.find(x => x.id === id);
+  return c ? c.name : id;
+}
+function currentUsed(){
+  return existingOrders.reduce((s,o)=>s+orderQty(o),0);
+}
+
+// --- REALTIME NAPOJENÍ NA FIRESTORE ---
+const settingsRef = doc(db, 'settings', 'config');
+onSnapshot(settingsRef, (snap) => {
+  if(snap.exists()){
+    const data = snap.data();
+    if(data.roastDateText) roastDateText = data.roastDateText;
+    if(data.maxCapacity) MAX_CAPACITY = data.maxCapacity;
+    document.getElementById('roastDate').textContent = roastDateText;
+    if(document.getElementById('adminPage') && !document.getElementById('adminPage').classList.contains('hidden')){
+      renderAdmin();
+    }
+    updateTotals();
+  }
+});
+
+const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'asc'));
+onSnapshot(ordersQuery, (snap) => {
+  existingOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderLog();
+  updateTotals();
+  if(document.getElementById('adminPage') && !document.getElementById('adminPage').classList.contains('hidden')){
+    renderAdmin();
+  }
+});
+
+// --- LOGIN GATE ---
+window.checkUserPassword = function(){
+  const val = document.getElementById('userPasswordInput').value;
+  if(val === USER_PASSWORD){
+    document.getElementById('userGate').classList.add('hidden');
+    document.getElementById('userPage').classList.remove('hidden');
+    document.querySelector('.admin-link').classList.add('hidden');
+  } else {
+    document.getElementById('userGateError').textContent = 'Nesprávné heslo, zkus to znovu.';
+  }
+}
+document.getElementById('showAdminLogin').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('userGate').classList.add('hidden');
+  document.getElementById('adminGate').classList.remove('hidden');
+});
+window.checkAdminPassword = function(){
+  const val = document.getElementById('adminPasswordInput').value;
+  if(val === ADMIN_PASSWORD){
+    document.getElementById('adminGate').classList.add('hidden');
+    document.getElementById('adminPage').classList.remove('hidden');
+    renderAdmin();
+  } else {
+    document.getElementById('adminGateError').textContent = 'Nesprávné heslo.';
+  }
+}
+document.getElementById('adminLogout').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('adminPage').classList.add('hidden');
+  document.getElementById('userGate').classList.remove('hidden');
+  document.querySelector('.admin-link').classList.remove('hidden');
+});
+
+// --- ADMIN LOGIC ---
+function renderAdmin(){
+  document.getElementById('adminDateInput').value = roastDateText;
+  document.getElementById('adminCapacityInput').value = MAX_CAPACITY;
+  document.getElementById('adminUsedText').textContent = currentUsed();
+  document.getElementById('adminMaxText').textContent = MAX_CAPACITY;
+
+  const list = document.getElementById('adminOrderList');
+  if(existingOrders.length === 0){
+    list.innerHTML = '<div style="font-size:13px;color:var(--text-soft)">Zatím žádné objednávky.</div>';
+  } else {
+    list.innerHTML = existingOrders.map(o => {
+      const breakdown = Object.entries(o.items)
+        .filter(([id, qty]) => qty > 0)
+        .map(([id, qty]) => `${coffeeName(id)} × ${qty}`)
+        .join(', ');
+      return `
+        <div class="admin-order-row">
+          <div>
+            <div class="who">${o.name}</div>
+            <div class="what">${breakdown}</div>
+          </div>
+          <span style="font-weight:600">${orderQty(o)} ks</span>
+        </div>
+      `;
+    }).join('');
+  }
+}
+window.saveRoastDate = async function(){
+  const val = document.getElementById('adminDateInput').value.trim();
+  if(!val) return;
+  await setDoc(settingsRef, { roastDateText: val, maxCapacity: MAX_CAPACITY }, { merge: true });
+}
+window.saveCapacity = async function(){
+  const val = parseInt(document.getElementById('adminCapacityInput').value, 10);
+  if(!isNaN(val) && val > 0){
+    await setDoc(settingsRef, { roastDateText: roastDateText, maxCapacity: val }, { merge: true });
+  }
+}
+window.resetOrders = async function(){
+  if(!confirm('Opravdu resetovat všechny objednávky? Tato akce je nevratná.')) return;
+  const deletions = existingOrders.map(o => deleteDoc(doc(db, 'orders', o.id)));
+  await Promise.all(deletions);
+}
+
+function renderCoffees(){
+  const el = document.getElementById('coffeeList');
+  el.innerHTML = coffees.map(c => `
+    <div class="coffee-item">
+      <div class="coffee-info">
+        <div class="name">${c.name}</div>
+        <div class="origin">${c.origin}</div>
+      </div>
+      <div class="stepper">
+        <button onclick="changeQty('${c.id}',-1)">−</button>
+        <span class="count" id="count-${c.id}">${selection[c.id]}</span>
+        <button onclick="changeQty('${c.id}',1)">+</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.changeQty = function(id, delta){
+  const used = currentUsed();
+  const mySum = Object.values(selection).reduce((a,b)=>a+b,0);
+  if(delta > 0 && used + mySum >= MAX_CAPACITY) return;
+  selection[id] = Math.max(0, selection[id] + delta);
+  document.getElementById(`count-${id}`).textContent = selection[id];
+  updateTotals();
+}
+
+function updateTotals(){
+  const mySum = Object.values(selection).reduce((a,b)=>a+b,0);
+  document.getElementById('totalCount').textContent = mySum;
+  const used = currentUsed() + mySum;
+  document.getElementById('gaugeText').textContent = `${used} / ${MAX_CAPACITY}`;
+  document.getElementById('gaugeFill').style.width = Math.min(100, (used/MAX_CAPACITY)*100) + '%';
+  const capacityReached = currentUsed() >= MAX_CAPACITY && mySum === 0;
+  document.getElementById('submitBtn').disabled = mySum === 0 || !document.getElementById('nameInput').value.trim() || capacityReached;
+}
+
+function renderLog(){
+  const el = document.getElementById('orderLog');
+  if(existingOrders.length === 0){
+    el.innerHTML = '<div style="font-size:13px;color:var(--text-soft)">Zatím žádné objednávky.</div>';
+    return;
+  }
+  el.innerHTML = existingOrders.map((o,i) => `
+    <div class="log-item"><span>Objednávka #${i+1}</span><span>${orderQty(o)} balíčků</span></div>
+  `).join('');
+}
+
+document.getElementById('nameInput').addEventListener('input', updateTotals);
+
+document.getElementById('submitBtn').addEventListener('click', async () => {
+  const mySum = Object.values(selection).reduce((a,b)=>a+b,0);
+  const name = document.getElementById('nameInput').value.trim();
+  if(mySum === 0 || !name) return;
+  document.getElementById('submitBtn').disabled = true;
+  await addDoc(collection(db, 'orders'), {
+    name: name,
+    items: { ...selection },
+    createdAt: serverTimestamp()
+  });
+  coffees.forEach(c => selection[c.id] = 0);
+  renderCoffees();
+  document.getElementById('nameInput').value = '';
+  showToast();
+});
+
+function showToast(){
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+document.getElementById('roastDate').textContent = roastDateText;
+renderCoffees();
+updateTotals();
+</script>
+
+</body>
+</html>
