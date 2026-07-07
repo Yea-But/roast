@@ -284,6 +284,9 @@ import {
   getFirestore, collection, addDoc, doc, setDoc, getDoc,
   onSnapshot, deleteDoc, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDY8GPdTLoOQDHdUsTlh4EeCmGQm44b4Bs",
@@ -295,10 +298,12 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
-// Hesla jsou zatím natvrdo v kódu — jednoduchá "gate" ochrana, ne skutečný login.
-const USER_PASSWORD = 'kava2026';
-const ADMIN_PASSWORD = 'admin2026';
+// Technické účty ve Firebase Authentication — uživatel zadává jen heslo,
+// e-mail se doplní na pozadí. Skutečné ověření probíhá na serveru Firebase.
+const USER_EMAIL = 'uzivatel@praziaren.local';
+const ADMIN_EMAIL = 'admin@praziaren.local';
 
 const coffees = [
   { id:'etiopie', name:'Etiopie Yirgacheffe', origin:'Ovoce, jasmín, citrus' },
@@ -310,7 +315,9 @@ coffees.forEach(c => selection[c.id] = 0);
 
 let MAX_CAPACITY = 40;
 let roastDateText = 'Sobota 12. července';
-let existingOrders = []; // plní se realtime z Firestore
+let existingOrders = [];
+let unsubOrders = null;
+let unsubSettings = null;
 
 function orderQty(order){
   return Object.values(order.items).reduce((a,b)=>a+b,0);
@@ -323,39 +330,67 @@ function currentUsed(){
   return existingOrders.reduce((s,o)=>s+orderQty(o),0);
 }
 
-// --- REALTIME NAPOJENÍ NA FIRESTORE ---
 const settingsRef = doc(db, 'settings', 'config');
-onSnapshot(settingsRef, (snap) => {
-  if(snap.exists()){
-    const data = snap.data();
-    if(data.roastDateText) roastDateText = data.roastDateText;
-    if(data.maxCapacity) MAX_CAPACITY = data.maxCapacity;
-    document.getElementById('roastDate').textContent = roastDateText;
-    if(document.getElementById('adminPage') && !document.getElementById('adminPage').classList.contains('hidden')){
-      renderAdmin();
-    }
-    updateTotals();
-  }
-});
 
-const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'asc'));
-onSnapshot(ordersQuery, (snap) => {
-  existingOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  renderLog();
-  updateTotals();
-  if(document.getElementById('adminPage') && !document.getElementById('adminPage').classList.contains('hidden')){
-    renderAdmin();
+function startListeners(){
+  if(unsubSettings) unsubSettings();
+  if(unsubOrders) unsubOrders();
+
+  unsubSettings = onSnapshot(settingsRef, (snap) => {
+    if(snap.exists()){
+      const data = snap.data();
+      if(data.roastDateText) roastDateText = data.roastDateText;
+      if(data.maxCapacity) MAX_CAPACITY = data.maxCapacity;
+      document.getElementById('roastDate').textContent = roastDateText;
+      if(!document.getElementById('adminPage').classList.contains('hidden')) renderAdmin();
+      updateTotals();
+    }
+  });
+
+  const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'asc'));
+  unsubOrders = onSnapshot(ordersQuery, (snap) => {
+    existingOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderLog();
+    updateTotals();
+    if(!document.getElementById('adminPage').classList.contains('hidden')) renderAdmin();
+  });
+}
+
+function stopListeners(){
+  if(unsubSettings) unsubSettings();
+  if(unsubOrders) unsubOrders();
+  unsubSettings = null; unsubOrders = null;
+  existingOrders = [];
+}
+
+// --- AUTH STATE ---
+onAuthStateChanged(auth, (user) => {
+  document.getElementById('userGate').classList.add('hidden');
+  document.getElementById('adminGate').classList.add('hidden');
+  document.getElementById('userPage').classList.add('hidden');
+  document.getElementById('adminPage').classList.add('hidden');
+  document.querySelector('.admin-link').classList.add('hidden');
+
+  if(user && user.email === ADMIN_EMAIL){
+    document.getElementById('adminPage').classList.remove('hidden');
+    startListeners();
+  } else if(user && user.email === USER_EMAIL){
+    document.getElementById('userPage').classList.remove('hidden');
+    startListeners();
+  } else {
+    document.getElementById('userGate').classList.remove('hidden');
+    document.querySelector('.admin-link').classList.remove('hidden');
+    stopListeners();
   }
 });
 
 // --- LOGIN GATE ---
-window.checkUserPassword = function(){
+window.checkUserPassword = async function(){
   const val = document.getElementById('userPasswordInput').value;
-  if(val === USER_PASSWORD){
-    document.getElementById('userGate').classList.add('hidden');
-    document.getElementById('userPage').classList.remove('hidden');
-    document.querySelector('.admin-link').classList.add('hidden');
-  } else {
+  document.getElementById('userGateError').textContent = '';
+  try{
+    await signInWithEmailAndPassword(auth, USER_EMAIL, val);
+  } catch(err){
     document.getElementById('userGateError').textContent = 'Nesprávné heslo, zkus to znovu.';
   }
 }
@@ -364,21 +399,18 @@ document.getElementById('showAdminLogin').addEventListener('click', (e) => {
   document.getElementById('userGate').classList.add('hidden');
   document.getElementById('adminGate').classList.remove('hidden');
 });
-window.checkAdminPassword = function(){
+window.checkAdminPassword = async function(){
   const val = document.getElementById('adminPasswordInput').value;
-  if(val === ADMIN_PASSWORD){
-    document.getElementById('adminGate').classList.add('hidden');
-    document.getElementById('adminPage').classList.remove('hidden');
-    renderAdmin();
-  } else {
+  document.getElementById('adminGateError').textContent = '';
+  try{
+    await signInWithEmailAndPassword(auth, ADMIN_EMAIL, val);
+  } catch(err){
     document.getElementById('adminGateError').textContent = 'Nesprávné heslo.';
   }
 }
-document.getElementById('adminLogout').addEventListener('click', (e) => {
+document.getElementById('adminLogout').addEventListener('click', async (e) => {
   e.preventDefault();
-  document.getElementById('adminPage').classList.add('hidden');
-  document.getElementById('userGate').classList.remove('hidden');
-  document.querySelector('.admin-link').classList.remove('hidden');
+  await signOut(auth);
 });
 
 // --- ADMIN LOGIC ---
@@ -497,7 +529,6 @@ function showToast(){
   setTimeout(()=>t.classList.remove('show'), 2200);
 }
 
-document.getElementById('roastDate').textContent = roastDateText;
 renderCoffees();
 updateTotals();
 </script>
