@@ -173,6 +173,30 @@ h1.title{
 }
 .danger-btn:hover{ background:#F7DFD8; }
 
+/* Coffee management (admin) */
+.coffee-manage-row{
+  display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid var(--border);
+}
+.coffee-manage-row:last-child{ border-bottom:none; }
+.coffee-manage-info{ flex:1; min-width:0; }
+.coffee-manage-info .name{ font-weight:600; font-size:14px; }
+.coffee-manage-info .origin{ font-size:12px; color:var(--text-soft); margin-top:2px; }
+.availability-btn{
+  padding:6px 12px; border-radius:20px; border:1px solid var(--border); font-size:12px; font-weight:600;
+  cursor:pointer; white-space:nowrap; transition:background .2s ease, border-color .2s ease;
+}
+.availability-btn.available{ background:#EAF3EA; color:#3F7A44; border-color:#CFE4CF; }
+.availability-btn.unavailable{ background:var(--panel-alt); color:var(--text-soft); }
+.icon-btn{
+  width:30px; height:30px; border-radius:8px; border:1px solid var(--border); background:var(--panel);
+  cursor:pointer; font-size:14px; color:var(--text-soft); transition:background .2s ease, color .2s ease;
+}
+.icon-btn:hover{ background:#FBEFEC; color:#B3432E; }
+.add-coffee-form{ display:flex; flex-direction:column; gap:8px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+.add-coffee-form input{
+  padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px;
+}
+
 .hidden{ display:none !important; }
 </style>
 </head>
@@ -264,6 +288,16 @@ h1.title{
     </div>
 
     <div class="panel">
+      <h2>Nabídka káv</h2>
+      <div id="coffeeManageList"></div>
+      <div class="add-coffee-form">
+        <input id="newCoffeeName" placeholder="Název kávy (např. Guatemala Antigua)" />
+        <input id="newCoffeeOrigin" placeholder="Popis chuti / původ" />
+        <button class="save-btn" onclick="addCoffee()">Přidat kávu do nabídky</button>
+      </div>
+    </div>
+
+    <div class="panel">
       <h2>Objednávky (se jmény)</h2>
       <div id="adminOrderList"></div>
     </div>
@@ -281,7 +315,7 @@ h1.title{
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, doc, setDoc, getDoc,
+  getFirestore, collection, addDoc, doc, setDoc, getDoc, updateDoc,
   onSnapshot, deleteDoc, query, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
@@ -305,25 +339,22 @@ const auth = getAuth(app);
 const USER_EMAIL = 'uzivatel@praziaren.local';
 const ADMIN_EMAIL = 'admin@praziaren.local';
 
-const coffees = [
-  { id:'etiopie', name:'Etiopie Yirgacheffe', origin:'Ovoce, jasmín, citrus' },
-  { id:'kolumbie', name:'Kolumbie Huila', origin:'Karamel, oříšky, čokoláda' },
-  { id:'brazilie', name:'Brazílie Cerrado', origin:'Ořech, jemná sladkost' },
-];
+let allCoffees = [];   // úplný seznam z Firestore (i nedostupné) — pro admina
+let coffees = [];       // jen dostupné — pro objednávkovou stránku
 let selection = {};
-coffees.forEach(c => selection[c.id] = 0);
 
 let MAX_CAPACITY = 40;
 let roastDateText = 'Sobota 12. července';
 let existingOrders = [];
 let unsubOrders = null;
 let unsubSettings = null;
+let unsubCoffees = null;
 
 function orderQty(order){
   return Object.values(order.items).reduce((a,b)=>a+b,0);
 }
 function coffeeName(id){
-  const c = coffees.find(x => x.id === id);
+  const c = allCoffees.find(x => x.id === id);
   return c ? c.name : id;
 }
 function currentUsed(){
@@ -335,6 +366,7 @@ const settingsRef = doc(db, 'settings', 'config');
 function startListeners(){
   if(unsubSettings) unsubSettings();
   if(unsubOrders) unsubOrders();
+  if(unsubCoffees) unsubCoffees();
 
   unsubSettings = onSnapshot(settingsRef, (snap) => {
     if(snap.exists()){
@@ -354,13 +386,29 @@ function startListeners(){
     updateTotals();
     if(!document.getElementById('adminPage').classList.contains('hidden')) renderAdmin();
   });
+
+  const coffeesQuery = query(collection(db, 'coffees'), orderBy('createdAt', 'asc'));
+  unsubCoffees = onSnapshot(coffeesQuery, (snap) => {
+    allCoffees = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    coffees = allCoffees.filter(c => c.available !== false);
+
+    // Doplnění/úklid selection podle aktuálně dostupných káv
+    const validIds = new Set(coffees.map(c => c.id));
+    Object.keys(selection).forEach(id => { if(!validIds.has(id)) delete selection[id]; });
+    coffees.forEach(c => { if(!(c.id in selection)) selection[c.id] = 0; });
+
+    renderCoffees();
+    updateTotals();
+    if(!document.getElementById('adminPage').classList.contains('hidden')) renderAdmin();
+  });
 }
 
 function stopListeners(){
   if(unsubSettings) unsubSettings();
   if(unsubOrders) unsubOrders();
-  unsubSettings = null; unsubOrders = null;
-  existingOrders = [];
+  if(unsubCoffees) unsubCoffees();
+  unsubSettings = null; unsubOrders = null; unsubCoffees = null;
+  existingOrders = []; allCoffees = []; coffees = []; selection = {};
 }
 
 // --- AUTH STATE ---
@@ -408,6 +456,12 @@ window.checkAdminPassword = async function(){
     document.getElementById('adminGateError').textContent = 'Nesprávné heslo.';
   }
 }
+document.getElementById('userPasswordInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') checkUserPassword();
+});
+document.getElementById('adminPasswordInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') checkAdminPassword();
+});
 document.getElementById('adminLogout').addEventListener('click', async (e) => {
   e.preventDefault();
   await signOut(auth);
@@ -419,6 +473,7 @@ function renderAdmin(){
   document.getElementById('adminCapacityInput').value = MAX_CAPACITY;
   document.getElementById('adminUsedText').textContent = currentUsed();
   document.getElementById('adminMaxText').textContent = MAX_CAPACITY;
+  renderCoffeeManage();
 
   const list = document.getElementById('adminOrderList');
   if(existingOrders.length === 0){
@@ -440,6 +495,50 @@ function renderAdmin(){
       `;
     }).join('');
   }
+}
+
+function renderCoffeeManage(){
+  const el = document.getElementById('coffeeManageList');
+  if(allCoffees.length === 0){
+    el.innerHTML = '<div style="font-size:13px;color:var(--text-soft)">Zatím žádné kávy v nabídce.</div>';
+    return;
+  }
+  el.innerHTML = allCoffees.map(c => {
+    const isAvailable = c.available !== false;
+    return `
+      <div class="coffee-manage-row">
+        <div class="coffee-manage-info">
+          <div class="name">${c.name}</div>
+          <div class="origin">${c.origin || ''}</div>
+        </div>
+        <button class="availability-btn ${isAvailable ? 'available' : 'unavailable'}" onclick="toggleCoffeeAvailability('${c.id}', ${isAvailable})">
+          ${isAvailable ? 'Dostupné' : 'Nedostupné'}
+        </button>
+        <button class="icon-btn" onclick="deleteCoffee('${c.id}')" title="Smazat">✕</button>
+      </div>
+    `;
+  }).join('');
+}
+
+window.addCoffee = async function(){
+  const nameEl = document.getElementById('newCoffeeName');
+  const originEl = document.getElementById('newCoffeeOrigin');
+  const name = nameEl.value.trim();
+  const origin = originEl.value.trim();
+  if(!name) return;
+  await addDoc(collection(db, 'coffees'), {
+    name, origin, available: true, createdAt: serverTimestamp()
+  });
+  nameEl.value = ''; originEl.value = '';
+}
+
+window.toggleCoffeeAvailability = async function(id, currentlyAvailable){
+  await updateDoc(doc(db, 'coffees', id), { available: !currentlyAvailable });
+}
+
+window.deleteCoffee = async function(id){
+  if(!confirm('Smazat tuto kávu z nabídky?')) return;
+  await deleteDoc(doc(db, 'coffees', id));
 }
 window.saveRoastDate = async function(){
   const val = document.getElementById('adminDateInput').value.trim();
