@@ -319,6 +319,9 @@ h1.title{
 
     <div class="panel">
       <h2>Objednávky (se jmény)</h2>
+      <div class="field-row" style="margin-bottom:14px">
+        <button class="save-btn" onclick="exportOrdersPDF()">📄 Exportovat do PDF</button>
+      </div>
       <div id="adminOrderList"></div>
     </div>
 
@@ -331,6 +334,9 @@ h1.title{
 </div>
 
 <div class="toast" id="toast">Objednávka odeslána</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -608,12 +614,88 @@ window.resetOrders = async function(){
   await Promise.all(deletions);
 }
 
+window.exportOrdersPDF = async function(){
+  if(existingOrders.length === 0){
+    alert('Zatím nejsou žádné objednávky k exportu.');
+    return;
+  }
+
+  // Souhrn k upražení — kolik balíčků od každé kávy
+  const summary = {};
+  existingOrders.forEach(o => {
+    Object.entries(o.items).forEach(([id, qty]) => {
+      if(qty > 0) summary[id] = (summary[id] || 0) + qty;
+    });
+  });
+  const summaryRows = Object.entries(summary)
+    .map(([id, qty]) => `<tr><td>${coffeeName(id)}</td><td style="text-align:right">${qty} ks</td></tr>`)
+    .join('');
+
+  const orderRows = existingOrders.map(o => {
+    const breakdown = Object.entries(o.items)
+      .filter(([id, qty]) => qty > 0)
+      .map(([id, qty]) => `${coffeeName(id)} × ${qty}`)
+      .join(', ');
+    return `<tr><td style="font-weight:600">${o.name}</td><td>${breakdown}</td><td style="text-align:right">${orderQty(o)} ks</td></tr>`;
+  }).join('');
+
+  const container = document.createElement('div');
+  container.style.cssText = 'position:absolute; left:-9999px; top:0; width:760px; padding:40px; background:#fff; font-family:Arial,sans-serif; color:#2B2825;';
+  container.innerHTML = `
+    <h1 style="font-size:22px; margin:0 0 4px;">Yea But. COFFEE — objednávka</h1>
+    <p style="font-size:13px; color:#8A8478; margin:0 0 24px;">Pražení: ${roastDateText}</p>
+
+    <h2 style="font-size:15px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.04em;">Souhrn k upražení</h2>
+    <table style="width:100%; border-collapse:collapse; margin-bottom:28px; font-size:14px;">
+      ${summaryRows}
+    </table>
+
+    <h2 style="font-size:15px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.04em;">Seznam objednávek</h2>
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      ${orderRows}
+    </table>
+  `;
+  container.querySelectorAll('table tr').forEach(tr => {
+    tr.style.borderBottom = '1px solid #E5E2DC';
+  });
+  container.querySelectorAll('td').forEach(td => {
+    td.style.padding = '8px 4px';
+  });
+  document.body.appendChild(container);
+
+  const canvas = await html2canvas(container, { scale: 2 });
+  document.body.removeChild(container);
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = 210;
+  const pageHeight = 297;
+  const imgWidth = pageWidth;
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  let heightLeft = imgHeight;
+  let position = 0;
+  const imgData = canvas.toDataURL('image/png');
+
+  pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+  heightLeft -= pageHeight;
+
+  while(heightLeft > 0){
+    position = heightLeft - imgHeight;
+    pdf.addPage();
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+  }
+
+  const fileDate = roastDateText.replace(/[^a-zA-Z0-9]+/g, '-');
+  pdf.save(`objednavka-${fileDate}.pdf`);
+}
+
 function renderCoffees(){
   const el = document.getElementById('coffeeList');
   el.innerHTML = coffees.map(c => {
-    const stockNote = (typeof c.stock === 'number')
-      ? `<div class="stock-note">${c.stock > 0 ? `Zbývá ${c.stock} ks` : 'Vyprodáno'}</div>`
-      : '';
+    const soldOut = typeof c.stock === 'number' && c.stock - selection[c.id] <= 0;
+    const stockNote = soldOut ? `<div class="stock-note">Vyprodáno</div>` : '';
     return `
     <div class="coffee-item">
       <div class="coffee-info">
@@ -624,7 +706,7 @@ function renderCoffees(){
       <div class="stepper">
         <button onclick="changeQty('${c.id}',-1)">−</button>
         <span class="count" id="count-${c.id}">${selection[c.id]}</span>
-        <button onclick="changeQty('${c.id}',1)">+</button>
+        <button ${soldOut ? 'disabled' : ''} onclick="changeQty('${c.id}',1)">+</button>
       </div>
     </div>
   `;
@@ -640,7 +722,7 @@ window.changeQty = function(id, delta){
     if(coffee && typeof coffee.stock === 'number' && selection[id] >= coffee.stock) return;
   }
   selection[id] = Math.max(0, selection[id] + delta);
-  document.getElementById(`count-${id}`).textContent = selection[id];
+  renderCoffees();
   updateTotals();
 }
 
