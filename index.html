@@ -203,6 +203,17 @@ h1.title{
 .add-coffee-form input{
   padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px;
 }
+.stock-line{ display:flex; align-items:center; gap:6px; margin-top:6px; }
+.stock-line label{ font-size:12px; color:var(--text-soft); white-space:nowrap; }
+.stock-input{
+  width:64px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px;
+}
+.mini-save-btn{
+  padding:5px 10px; border:none; border-radius:6px; background:var(--panel-alt); color:var(--text);
+  font-size:12px; font-weight:600; cursor:pointer; transition:background .2s ease;
+}
+.mini-save-btn:hover{ background:var(--accent-soft); }
+.coffee-info .stock-note{ font-size:12px; color:var(--text-soft); margin-top:4px; }
 
 .hidden{ display:none !important; }
 </style>
@@ -301,6 +312,7 @@ h1.title{
       <div class="add-coffee-form">
         <input id="newCoffeeName" placeholder="Název kávy (např. Guatemala Antigua)" />
         <input id="newCoffeeOrigin" placeholder="Popis chuti / původ" />
+        <input id="newCoffeeStock" type="number" min="0" placeholder="Skladová zásoba (prázdné = bez limitu)" />
         <button class="save-btn" onclick="addCoffee()">Přidat kávu do nabídky</button>
       </div>
     </div>
@@ -324,7 +336,7 @@ h1.title{
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, collection, addDoc, doc, setDoc, getDoc, updateDoc,
-  onSnapshot, deleteDoc, query, orderBy, serverTimestamp
+  onSnapshot, deleteDoc, query, orderBy, serverTimestamp, increment, deleteField
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
@@ -436,6 +448,10 @@ onAuthStateChanged(auth, (user) => {
   } else {
     document.getElementById('userGate').classList.remove('hidden');
     document.querySelector('.admin-link').classList.remove('hidden');
+    document.getElementById('userPasswordInput').value = '';
+    document.getElementById('adminPasswordInput').value = '';
+    document.getElementById('userGateError').textContent = '';
+    document.getElementById('adminGateError').textContent = '';
     stopListeners();
   }
 });
@@ -517,11 +533,17 @@ function renderCoffeeManage(){
   }
   el.innerHTML = allCoffees.map(c => {
     const isAvailable = c.available !== false;
+    const stockVal = (typeof c.stock === 'number') ? c.stock : '';
     return `
       <div class="coffee-manage-row">
         <div class="coffee-manage-info">
           <div class="name">${c.name}</div>
           <div class="origin">${c.origin || ''}</div>
+          <div class="stock-line">
+            <label>Sklad:</label>
+            <input type="number" min="0" class="stock-input" id="stock-${c.id}" value="${stockVal}" placeholder="bez limitu" />
+            <button class="mini-save-btn" onclick="saveCoffeeStock('${c.id}')">Uložit</button>
+          </div>
         </div>
         <button class="availability-btn ${isAvailable ? 'available' : 'unavailable'}" onclick="toggleCoffeeAvailability('${c.id}', ${isAvailable})">
           ${isAvailable ? 'Dostupné' : 'Nedostupné'}
@@ -532,16 +554,33 @@ function renderCoffeeManage(){
   }).join('');
 }
 
+window.saveCoffeeStock = async function(id){
+  const input = document.getElementById(`stock-${id}`);
+  const val = input.value.trim();
+  if(val === ''){
+    await updateDoc(doc(db, 'coffees', id), { stock: deleteField() });
+  } else {
+    const num = parseInt(val, 10);
+    if(!isNaN(num) && num >= 0){
+      await updateDoc(doc(db, 'coffees', id), { stock: num });
+    }
+  }
+}
+
 window.addCoffee = async function(){
   const nameEl = document.getElementById('newCoffeeName');
   const originEl = document.getElementById('newCoffeeOrigin');
+  const stockEl = document.getElementById('newCoffeeStock');
   const name = nameEl.value.trim();
   const origin = originEl.value.trim();
+  const stockVal = stockEl.value.trim();
   if(!name) return;
-  await addDoc(collection(db, 'coffees'), {
-    name, origin, available: true, createdAt: serverTimestamp()
-  });
-  nameEl.value = ''; originEl.value = '';
+  const newCoffee = { name, origin, available: true, createdAt: serverTimestamp() };
+  if(stockVal !== '' && !isNaN(parseInt(stockVal, 10))){
+    newCoffee.stock = parseInt(stockVal, 10);
+  }
+  await addDoc(collection(db, 'coffees'), newCoffee);
+  nameEl.value = ''; originEl.value = ''; stockEl.value = '';
 }
 
 window.toggleCoffeeAvailability = async function(id, currentlyAvailable){
@@ -571,11 +610,16 @@ window.resetOrders = async function(){
 
 function renderCoffees(){
   const el = document.getElementById('coffeeList');
-  el.innerHTML = coffees.map(c => `
+  el.innerHTML = coffees.map(c => {
+    const stockNote = (typeof c.stock === 'number')
+      ? `<div class="stock-note">${c.stock > 0 ? `Zbývá ${c.stock} ks` : 'Vyprodáno'}</div>`
+      : '';
+    return `
     <div class="coffee-item">
       <div class="coffee-info">
         <div class="name">${c.name}</div>
         <div class="origin">${c.origin}</div>
+        ${stockNote}
       </div>
       <div class="stepper">
         <button onclick="changeQty('${c.id}',-1)">−</button>
@@ -583,13 +627,18 @@ function renderCoffees(){
         <button onclick="changeQty('${c.id}',1)">+</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 window.changeQty = function(id, delta){
+  const coffee = coffees.find(c => c.id === id);
   const used = currentUsed();
   const mySum = Object.values(selection).reduce((a,b)=>a+b,0);
-  if(delta > 0 && used + mySum >= MAX_CAPACITY) return;
+  if(delta > 0){
+    if(used + mySum >= MAX_CAPACITY) return;
+    if(coffee && typeof coffee.stock === 'number' && selection[id] >= coffee.stock) return;
+  }
   selection[id] = Math.max(0, selection[id] + delta);
   document.getElementById(`count-${id}`).textContent = selection[id];
   updateTotals();
@@ -623,11 +672,23 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   const name = document.getElementById('nameInput').value.trim();
   if(mySum === 0 || !name) return;
   document.getElementById('submitBtn').disabled = true;
-  await addDoc(collection(db, 'orders'), {
-    name: name,
-    items: { ...selection },
-    createdAt: serverTimestamp()
-  });
+
+  const stockUpdates = Object.entries(selection)
+    .filter(([id, qty]) => {
+      const coffee = coffees.find(c => c.id === id);
+      return qty > 0 && coffee && typeof coffee.stock === 'number';
+    })
+    .map(([id, qty]) => updateDoc(doc(db, 'coffees', id), { stock: increment(-qty) }));
+
+  await Promise.all([
+    addDoc(collection(db, 'orders'), {
+      name: name,
+      items: { ...selection },
+      createdAt: serverTimestamp()
+    }),
+    ...stockUpdates
+  ]);
+
   coffees.forEach(c => selection[c.id] = 0);
   renderCoffees();
   document.getElementById('nameInput').value = '';
