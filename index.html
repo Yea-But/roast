@@ -528,7 +528,10 @@ function renderAdmin(){
             <div class="who">${o.name}</div>
             <div class="what">${breakdown}</div>
           </div>
-          <span style="font-weight:600">${orderQty(o)} ks</span>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-weight:600">${orderQty(o)} ks</span>
+            <button class="icon-btn" onclick="cancelOrder('${o.id}')" title="Zrušit objednávku">✕</button>
+          </div>
         </div>
       `;
     }).join('');
@@ -612,6 +615,24 @@ window.saveCapacity = async function(){
     await setDoc(settingsRef, { roastDateText: roastDateText, maxCapacity: val }, { merge: true });
   }
 }
+window.cancelOrder = async function(orderId){
+  const order = existingOrders.find(o => o.id === orderId);
+  if(!order) return;
+  if(!confirm(`Opravdu zrušit objednávku (${order.name})? Skladové zásoby se navýší zpět.`)) return;
+
+  const restocks = Object.entries(order.items)
+    .filter(([id, qty]) => {
+      const coffee = allCoffees.find(c => c.id === id);
+      return qty > 0 && coffee && typeof coffee.stock === 'number';
+    })
+    .map(([id, qty]) => updateDoc(doc(db, 'coffees', id), { stock: increment(qty) }));
+
+  await Promise.all([
+    deleteDoc(doc(db, 'orders', orderId)),
+    ...restocks
+  ]);
+}
+
 window.resetOrders = async function(){
   if(!confirm('Opravdu resetovat všechny objednávky? Tato akce je nevratná.')) return;
   const deletions = existingOrders.map(o => deleteDoc(doc(db, 'orders', o.id)));
