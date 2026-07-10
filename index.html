@@ -113,6 +113,11 @@ h1.title{
 }
 .log-item:last-child{ border-bottom:none; }
 
+.espresso-stat{
+  margin-top:32px; padding-top:20px; border-top:1px solid var(--border);
+  text-align:center; font-size:13px; color:var(--text-soft); letter-spacing:.01em;
+}
+
 .toast{
   position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
   background:var(--text); color:#fff; padding:12px 20px; border-radius:10px; font-size:14px;
@@ -283,6 +288,8 @@ h1.title{
 
     <div class="log-title">Dosavadní objednávky</div>
     <div id="orderLog"></div>
+
+    <div class="espresso-stat" id="espressoStat"></div>
   </div>
 </div>
 
@@ -331,6 +338,15 @@ h1.title{
     </div>
 
     <div class="panel">
+      <h2>Štatistika — upražená káva</h2>
+      <div class="field-row">
+        <input id="adminRoastedKgInput" type="number" step="0.1" min="0" placeholder="např. 104.4" />
+        <button class="save-btn" onclick="saveRoastedTotal()">Uložit</button>
+      </div>
+      <div style="font-size:13px;color:var(--text-soft)">Zadej v kg upražené (ne zelené) kávy. Při každém resetu objednávek se automaticky připočítají odeslané balíčky.</div>
+    </div>
+
+    <div class="panel">
       <h2>Nové kolo pražení</h2>
       <p style="font-size:13px;color:var(--text-soft);margin-top:0">Smaže všechny aktuální objednávky a připraví systém na další pražení.</p>
       <button class="danger-btn" onclick="resetOrders()">Resetovat objednávky</button>
@@ -369,6 +385,8 @@ const auth = getAuth(app);
 // e-mail se doplní na pozadí. Skutečné ověření probíhá na serveru Firebase.
 const USER_EMAIL = 'kavopic@ybc.local';
 const ADMIN_EMAIL = 'adminkavopic@ybc.local';
+const PACKAGE_WEIGHT_G = 350;   // hmotnost jednoho balíčku upražené kávy
+const ESPRESSO_DOSE_G = 9;      // dávka kávy na jedno espreso
 
 let allCoffees = [];   // úplný seznam z Firestore (i nedostupné) — pro admina
 let coffees = [];       // jen dostupné — pro objednávkovou stránku
@@ -376,6 +394,7 @@ let selection = {};
 
 let MAX_CAPACITY = 40;
 let roastDateText = 'Sobota 12. července';
+let roastedGramsTotal = 0; // celkové upražené množství (g) — základ pro espresso statistiku
 let existingOrders = [];
 let unsubOrders = null;
 let unsubSettings = null;
@@ -404,7 +423,9 @@ function startListeners(){
       const data = snap.data();
       if(data.roastDateText) roastDateText = data.roastDateText;
       if(data.maxCapacity) MAX_CAPACITY = data.maxCapacity;
+      if(typeof data.roastedGramsTotal === 'number') roastedGramsTotal = data.roastedGramsTotal;
       document.getElementById('roastDate').textContent = roastDateText;
+      renderEspressoStat();
       if(!document.getElementById('adminPage').classList.contains('hidden')) renderAdmin();
       updateTotals();
     }
@@ -512,6 +533,7 @@ function renderAdmin(){
   document.getElementById('adminCapacityInput').value = MAX_CAPACITY;
   document.getElementById('adminUsedText').textContent = currentUsed();
   document.getElementById('adminMaxText').textContent = MAX_CAPACITY;
+  document.getElementById('adminRoastedKgInput').value = (roastedGramsTotal / 1000).toFixed(1);
   renderCoffeeManage();
 
   const list = document.getElementById('adminOrderList');
@@ -634,10 +656,23 @@ window.cancelOrder = async function(orderId){
   ]);
 }
 
+window.saveRoastedTotal = async function(){
+  const val = parseFloat(document.getElementById('adminRoastedKgInput').value);
+  if(!isNaN(val) && val >= 0){
+    await setDoc(settingsRef, { roastedGramsTotal: Math.round(val * 1000) }, { merge: true });
+  }
+}
+
 window.resetOrders = async function(){
   if(!confirm('Opravdu resetovat všechny objednávky? Tato akce je nevratná.')) return;
+  const totalPackages = existingOrders.reduce((s,o) => s + orderQty(o), 0);
+  const addedGrams = totalPackages * PACKAGE_WEIGHT_G;
   const deletions = existingOrders.map(o => deleteDoc(doc(db, 'orders', o.id)));
-  await Promise.all(deletions);
+  const tasks = [...deletions];
+  if(addedGrams > 0){
+    tasks.push(setDoc(settingsRef, { roastedGramsTotal: increment(addedGrams) }, { merge: true }));
+  }
+  await Promise.all(tasks);
 }
 
 window.exportOrdersPDF = async function(){
@@ -760,6 +795,13 @@ function updateTotals(){
   document.getElementById('gaugeFill').style.width = Math.min(100, (used/MAX_CAPACITY)*100) + '%';
   const capacityReached = currentUsed() >= MAX_CAPACITY && mySum === 0;
   document.getElementById('submitBtn').disabled = mySum === 0 || !document.getElementById('nameInput').value.trim() || capacityReached;
+}
+
+function renderEspressoStat(){
+  const el = document.getElementById('espressoStat');
+  if(!el) return;
+  const espressos = Math.round(roastedGramsTotal / ESPRESSO_DOSE_G);
+  el.textContent = `☕ Doteraz sme spolu vypili približne ${espressos.toLocaleString('cs-CZ')} šálků espressa`;
 }
 
 function renderLog(){
