@@ -113,9 +113,18 @@ h1.title{
 }
 .log-item:last-child{ border-bottom:none; }
 
-.espresso-stat{
-  margin-top:32px; padding-top:20px; border-top:1px solid var(--border);
-  text-align:center; font-size:13px; color:var(--text-soft); letter-spacing:.01em;
+.stat-banner{
+  background:var(--text); color:#fff; text-align:center;
+  padding:32px 20px 40px; margin-top:36px;
+}
+.stat-value{
+  font-family:'Fraunces',serif; font-size:19px; font-weight:600; line-height:1.4;
+}
+.stat-price{
+  font-size:14px; color:#C9C2B4; margin-top:6px;
+}
+.stat-banner .thanks{
+  font-family:'Fraunces',serif; font-size:28px; font-weight:600; margin-top:22px;
 }
 
 .toast{
@@ -288,8 +297,12 @@ h1.title{
 
     <div class="log-title">Dosavadní objednávky</div>
     <div id="orderLog"></div>
+  </div>
 
-    <div class="espresso-stat" id="espressoStat"></div>
+  <div class="stat-banner">
+    <div class="stat-value" id="espressoStat"></div>
+    <div class="stat-price" id="espressoPriceStat"></div>
+    <div class="thanks">Moc děkujeme.</div>
   </div>
 </div>
 
@@ -799,9 +812,13 @@ function updateTotals(){
 
 function renderEspressoStat(){
   const el = document.getElementById('espressoStat');
-  if(!el) return;
+  const priceEl = document.getElementById('espressoPriceStat');
+  if(!el || !priceEl) return;
   const espressos = Math.round(roastedGramsTotal / ESPRESSO_DOSE_G);
-  el.textContent = `☕ Doteraz sme spolu vypili približne ${espressos.toLocaleString('cs-CZ')} šálků espressa`;
+  const AVG_PRICE = 62;
+  const totalPrice = espressos * AVG_PRICE;
+  el.textContent = `Od prvního pražení jsme spolu vypili ${espressos.toLocaleString('cs-CZ')} šálků espressa.`;
+  priceEl.textContent = `Při průměrné ceně 62 Kč je to celkem ${totalPrice.toLocaleString('cs-CZ')} Kč.`;
 }
 
 function renderLog(){
